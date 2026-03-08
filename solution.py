@@ -1,5 +1,5 @@
-## Student Name:
-## Student ID:
+## Student Name: Richard Balroop
+## Student ID: 216906349
 
 """
 Task A: Appointment Timeslot Recommender (Stub)
@@ -88,7 +88,7 @@ class InfeasibleSchedule(Exception):
 
 
 # ---------------- Core Function ----------------
-
+    
 def suggest_slots(
     day: date,
     working_hours: TimeWindow,
@@ -121,8 +121,80 @@ def suggest_slots(
         - See lab handout for required slot granularity (e.g., 5-min/15-min steps), if any.
     """
 
-    ##################################################################
-    # TODO: Implement as per lab handout requirements and constraints.
-    ##################################################################
-    
-    raise NotImplementedError("suggest_slots has not been implemented yet")
+    # ---------------- Input Validation ----------------
+
+    if working_hours.start >= working_hours.end:
+        raise InfeasibleSchedule("Working hours must satisfy start < end.")
+
+    if duration <= timedelta(0):
+        raise InfeasibleSchedule("Meeting duration must be positive.")
+
+    if n < 0:
+        raise InfeasibleSchedule("Number of suggestions must be >= 0.")
+
+    if buffer < timedelta(0):
+        raise InfeasibleSchedule("Buffer must be >= 0.")
+
+    if candidate_window is not None and candidate_window.start >= candidate_window.end:
+        raise InfeasibleSchedule("Candidate window must satisfy start < end.")
+
+    for b in busy_intervals:
+        if b.start >= b.end:
+            raise InfeasibleSchedule("Each busy interval must satisfy start < end.")
+
+    if n == 0:
+        return []
+
+    # ---------------- Effective Search Window ----------------
+
+    effective_start = working_hours.start
+    effective_end = working_hours.end
+
+    if candidate_window is not None:
+        effective_start = max(effective_start, candidate_window.start)
+        effective_end = min(effective_end, candidate_window.end)
+
+        if effective_start >= effective_end:
+            return []
+
+    window_start_dt = datetime.combine(day, effective_start)
+    window_end_dt = datetime.combine(day, effective_end)
+
+    # ---------------- Normalize Busy Intervals ----------------
+
+    expanded_busy = []
+    for b in busy_intervals:
+        busy_start = datetime.combine(day, b.start) - buffer
+        busy_end = datetime.combine(day, b.end) + buffer
+        expanded_busy.append((busy_start, busy_end))
+
+    expanded_busy.sort(key=lambda interval: (interval[0], interval[1]))
+
+    merged_busy = []
+    for start_dt, end_dt in expanded_busy:
+        if not merged_busy or start_dt > merged_busy[-1][1]:
+            merged_busy.append([start_dt, end_dt])
+        else:
+            merged_busy[-1][1] = max(merged_busy[-1][1], end_dt)
+
+    # ---------------- Generate Slots ----------------
+
+    slots: List[Slot] = []
+    step = timedelta(minutes=1)  # Assumed granularity
+
+    current_start = window_start_dt
+    while current_start + duration <= window_end_dt and len(slots) < n:
+        current_end = current_start + duration
+
+        conflict = False
+        for busy_start, busy_end in merged_busy:
+            if current_start < busy_end and busy_start < current_end:
+                conflict = True
+                break
+
+        if not conflict:
+            slots.append(Slot(start_time=current_start.time()))
+
+        current_start += step
+
+    return slots
