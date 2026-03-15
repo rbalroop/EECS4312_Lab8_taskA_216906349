@@ -1,0 +1,608 @@
+##1. Outputs produced by the system: 
+
+When one or more valid meeting slots exist, the system returns:
+
+Suggested Time Slot: exactly one valid time slot, which is the earliest valid slot
+
+Alternative Time Slots: the remaining valid time slots, listed in chronological order
+
+The cumulative number of returned valid slots across Suggested Time Slot and Alternative Time Slots must not exceed the user-requested maximum number of suggestions, n.
+
+If provide_explanations = false (default), the system returns only:
+
+the Suggested Time Slot
+
+the Alternative Time Slots
+
+If provide_explanations = true, the system also returns:
+
+a non-empty explanation for the Suggested Time Slot
+
+a non-empty explanation for each Alternative Time Slot
+
+Each per-slot explanation must reference at least one scheduling rule enforced by the system.
+
+If no valid meeting slots exist, the system returns:
+
+No Suggested Time Slot
+
+an empty list of Alternative Time Slots
+
+a non-empty explanation referencing at least one scheduling rule that prevented valid slots from being produced
+
+This no-valid-slot explanation must be returned regardless of whether provide_explanations is true or false.
+
+--
+
+Primary goal of the system:
+
+The objective of the system is to present a user with available times for a meeting to be scheduled, given the meeting duration, information about the user's schedule, and user preferences for when meetings may take place, while ensuring the results are predictable, valid, concise, and interpretable when explanation is needed.
+
+-- 
+
+## 2. Assumptions - List assumptions about the environment, users, or
+inputs.
+
+Assumption 1 - Inputs:
+
+Working hours start time: time
+
+Working hours end time: time
+
+(working hours are assumed to be same-day only)
+
+Times user is unavailable: List of unavailable time intervals
+
+(This list is assumed to be unsorted)
+
+Buffer duration: duration (optional)
+
+[By default, this parameter is set to 0]
+
+Preferred_time_window: Tuple of start time and end time (optional)
+
+[If no preferred time window is provided, it defaults to the full working hours window].
+
+This is an assumption I made.
+
+Meeting Duration: duration
+
+Day: date
+
+Number of suggestions requested: Int
+
+provide_explanations: boolean (optional)
+
+[By default, this parameter is set to false]
+
+Assumption 2: Any suggested back-to-back meeting time slots may be offset by no less than one minute (for example: 1 PM - 2 PM, and 1:01 PM - 2:01 PM)
+
+Assumption 3: The duration of a work day is assumed to fall strictly within one calendar day. Therefore, situations where a work day is under 24 hours but crosses into a second calendar day would be considered invalid.
+
+Assumption 4: There must be no duplicate returned valid time slot, where "duplicate" means the same start and end times.
+
+Assumption 5: Time windows are daily and non-wrapping; i.e. start < end
+
+Assumption 6: When one or more valid slots exist, the earliest valid slot is treated as the Suggested Time Slot, and any remaining valid returned slots are treated as Alternative Time Slots.
+
+Assumption 7: The provide_explanations parameter controls whether explanations are returned for valid suggested and alternative time slots. It does not suppress the explanation returned when no valid time slots exist.
+
+
+
+---
+
+## 3. Functional Requirements - Describe the main behaviors the system
+must perform.
+
+FR1 The system shall accept working hours provided by the user.
+
+FR2 The system shall accept a list of time intervals during which the user is busy.
+
+FR3 The system shall require a meeting duration to be provided.
+
+FR4 The system shall accept an optional time buffer between meetings.
+
+FR5 In the event that the user provides a buffer time, the system shall ensure all returned valid slots succeed their nearest preceding unavailability slot by at least the duration of the buffer time.
+
+FR6 In the event that the user provides a buffer time, the system shall ensure all returned valid slots precede their nearest subsequent unavailability slot by at least the duration of the buffer time.
+
+FR7 The system must provide a list of time slots that a meeting of a specified duration may be scheduled into.
+
+FR8 The system's returned valid time slots must be the same regardless of the ordering of the user's unavailable time slots.
+
+FR9 Returned time slots must be in chronological order, from the earliest to latest.
+
+FR10 Each returned valid time slot shall be unique.
+
+FR11 In the event that no buffer time is provided by the user, the system will assume the buffer time to be zero minutes.
+
+FR12 The system shall return, at most, the number of suggestions requested by the user.
+
+FR13 The system shall accept an optional boolean parameter provide_explanations.
+
+FR14 When one or more valid time slots exist, the system shall identify the earliest valid slot as the Suggested Time Slot.
+
+FR15 When more than one valid time slot exists, the system shall place the remaining returned valid slots under Alternative Time Slots, in chronological order.
+
+FR16 The total number of returned valid slots across Suggested Time Slot and Alternative Time Slots shall not exceed n.
+
+FR17 If provide_explanations = true and one or more valid time slots exist, the system shall return a non-empty explanation for the Suggested Time Slot and for each Alternative Time Slot.
+
+FR18 If no valid time slot exists, the system shall return no Suggested Time Slot, an empty Alternative Time Slots list, and a non-empty explanation referencing at least one enforced scheduling rule, regardless of whether provide_explanations is true or false.
+
+FR19 If provide_explanations = false and one or more valid time slots exist, the system shall return slot results without per-slot explanations.
+
+FR20 The system shall produce an explicit outcome for every scheduling request, including infeasible or boundary cases, rather than failing silently.
+---
+
+## 4. System Constraints - Constraints are conditions the system must
+always respect. Each constraint should reference the persona attribute
+it originates from.
+
+C1. Any suggested back-to-back meeting time slots may be offset by no less than one minute (for example: 1 PM - 2 PM, and 1:01 PM - 2:01 PM)
+
+(This is an assumption I have made)
+
+C2. The working day duration for which the system suggests booking times is assumed to not exceed 24 hours.
+
+C3. Returned time slots must not conflict with unavailable time slots.
+
+C4. A potential meeting time is invalid if, after applying buffer time around unavailable intervals, the remaining free gap is shorter than the meeting duration.
+
+C5. A potential meeting time is invalid if any portion of it falls outside a "preferred time window" specified by the user.
+
+C6. The set of returned valid time slots must be provided in chronological order (ascending order of slot start time).
+
+C7. The work day is assumed to fall strictly within one calendar day. Therefore, situations where a work day is under 24 hours but crosses into a second calendar day are considered invalid.
+
+(This is an assumption I made)
+
+C8. The number of returned time slots must not exceed the number of suggestions the user requested.
+
+C9. Given identical inputs, the system must return the same valid time slots in the same order.
+(Origin: Mo; need)
+
+C10. The system must not produce duplicate time slots.
+(Origin: Jane; pain point)
+
+C11. The system must only display slots that satisfy all validity constraints.
+(Origin: Jane; pain point)
+
+C12. When no valid slot exists, the system shall return no valid slots and a non-empty explanation referencing at least one scheduling rule that prevented valid slots from being produced, regardless of whether provide_explanations is true or false.
+(Origin: Mo; pain point)
+
+C13. When provide_explanations = true and one or more valid slots are returned, the system shall return a non-empty explanation for each returned slot that references at least one scheduling rule enforced by the system.
+(Origin: Mo; behaviour)
+
+C14. When one or more valid scheduling options exist, exactly one returned option must be explicitly distinguished as the Suggested Time Slot, and all other returned options must appear as Alternative Time Slots.
+(Origin: Jane; behaviour)
+
+C15. The system must support an optional user-controlled setting that enables or suppresses per-slot explanations for returned valid slots, without affecting the mandatory no-valid-slot explanation.
+
+C16. If no buffer value is provided, the system must treat the buffer as zero minutes.
+
+C17. The system must produce an explicit outcome for every scheduling request, including boundary or infeasible cases, rather than failing silently.
+
+--
+
+## 5. Acceptance Criteria - Acceptance criteria define how system
+behavior will be verified.
+
+AC1
+
+Given a working window from 1:00 PM to 3:00 PM, no unavailable intervals, a meeting duration of 60 minutes, and a slot generation granularity of 1 minute (assumption chosen)
+
+When the user requests 5 returned valid time slots
+
+Then the system must return, at most, 5 consecutive valid time slots whose start times differ by 1 minute, such as 1:00 PM–2:00 PM and 1:01 PM–2:01 PM
+
+Linked Constraint ID(s): C1
+
+AC2
+
+Given a working window whose duration exceeds 24 hours
+
+When the user submits the scheduling request
+
+Then the system rejects the request as invalid
+
+Linked Constraint ID(s): C2
+
+AC3
+
+Given a working window from 9:00 AM to 12:00 PM, an unavailable interval from 10:00 AM to 10:30 AM, and a meeting duration of 30 minutes
+
+When the user requests returned valid time slots
+
+Then the system does not return any valid slot that overlaps 10:00 AM to 10:30 AM
+
+Linked Constraint ID(s): C3
+
+AC4
+
+Given a working window from 9:00 AM to 11:00 AM, unavailable intervals from 9:30 AM to 9:50 AM and from 10:10 AM to 10:30 AM, a meeting duration of 20 minutes, and a buffer of 5 minutes
+
+When the user requests available meeting suggestions
+
+Then the system does not return any slot in the gap between 9:50 AM and 10:10 AM because that gap is too short after applying the buffer
+
+Linked Constraint ID(s): C4
+
+AC5
+
+Given a working window from 9:00 AM to 5:00 PM, a preferred time window from 1:00 PM to 3:00 PM, no unavailable intervals, and a meeting duration of 30 minutes
+
+When the user requests valid time slots
+
+Then every suggested slot starts and ends within 1:00 PM to 3:00 PM
+
+Linked Constraint ID(s): C5
+
+AC6
+
+Given multiple returned valid time slots for the same request
+
+When the system returns the requested valid time slots
+
+Then the returned valid slots preserve chronological order, with the Suggested Time Slot earliest and the Alternative Time Slots ordered from earliest to latest
+
+Linked Constraint ID(s): C6
+
+AC7
+
+Given a working window that starts at 10:00 PM and ends at 6:00 AM the next day
+
+When the user submits the scheduling request
+
+Then the system rejects the request as invalid
+
+Linked Constraint ID(s): C7
+
+AC8
+
+Given a scheduling request with more than 3 valid time available and the user requests 3 suggestions
+
+When the system generates returned valid time slots
+
+Then the total number of returned valid slots across the Suggested Time Slot and Alternative Time Slots is exactly 3, and they are the first 3 valid slots in chronological order
+
+Linked Constraint ID(s): C8, C6
+
+AC9
+
+Given the same scheduling inputs submitted twice
+
+When the system generates results for both requests
+
+Then the same valid time slots are returned in the same order both times
+
+Linked Constraint ID(s): C9
+
+AC10
+
+Given a scheduling request with multiple valid returned slots
+
+When the system generates results
+
+Then no returned slot appears more than once
+
+Linked Constraint ID(s): C10
+
+AC11
+
+Given working hours, unavailable intervals, buffer rules, and any preferred-time restrictions
+
+When the system returns time slots
+
+Then every returned slot satisfies all applicable validity constraints
+
+Linked Constraint ID(s): C11
+
+AC12
+
+Given provide_explanations = false and no valid time slot exists
+
+When the system processes the request
+
+Then it returns no Suggested Time Slot, an empty list of Alternative Time Slots, and a non-empty explanation referencing at least one scheduling rule
+
+Linked Constraint ID(s): C12
+
+AC13
+
+Given provide_explanations = true and one or more valid slots are returned
+
+When the system presents the results
+
+Then each returned slot is accompanied by a non-empty explanation referencing at least one scheduling rule enforced by the system
+
+Linked Constraint ID(s): C13
+
+AC14
+
+Given one or more valid time slots exist and n >= 1
+
+When the system returns the results
+
+Then exactly one returned slot is identified as the Suggested Time Slot, and any remaining returned slots appear as Alternative Time Slots
+
+Linked Constraint ID(s): C14
+
+AC15
+
+Given provide_explanations = false and one or more valid time slots are returned
+
+When the system presents the results
+
+Then the output includes the Suggested Time Slot and any Alternative Time Slots without per-slot explanations
+
+Linked Constraint ID(s): C14, C15
+
+AC16
+
+Given provide_explanations = true and no valid time slot exists
+
+When the system processes the request
+
+Then it returns no Suggested Time Slot, an empty list of Alternative Time Slots, and a non-empty explanation referencing at least one scheduling rule
+
+Linked Constraint ID(s): C12
+
+AC17
+
+Given otherwise identical valid requests with provide_explanations = false and provide_explanations = true
+
+When the system returns results
+
+Then the returned valid slots are the same in both cases, and per-slot explanations are present only when provide_explanations = true
+
+Linked Constraint ID(s): C13, C15
+
+AC18
+
+Given no buffer value is supplied and a request would have valid results under a zero-minute buffer
+
+When the system processes the request
+
+Then the returned results match the case where buffer = 0 is explicitly provided
+
+Linked Constraint ID(s): C16
+
+AC19
+
+Given a scheduling request whose meeting duration exceeds all available working intervals
+
+When the system evaluates possible time slots
+
+Then the system returns no valid slots and a non-empty explanation indicating why scheduling is infeasible
+
+Linked Constraint ID(s): C17
+
+---
+
+## 6. Edge Cases - Describe unusual or boundary situations the system
+must handle.
+
+EC1:
+
+Description: No valid meeting slot exists within the working window because all available gaps are shorter than the required meeting duration.
+
+Linked Constraint ID(s): C3, C4
+
+Covered by Acceptance Criteria ID(s): AC3, AC4
+
+EC2
+
+Description: No valid meeting slot exists because applying the buffer eliminates a gap that would otherwise exactly fit the meeting duration.
+
+Linked Constraint ID(s): C4
+
+Covered by Acceptance Criteria ID(s): AC4
+
+EC3
+
+Description: Busy intervals are adjacent, such as one interval ending exactly when the next begins, so the system must not treat the boundary as a free gap.
+
+Linked Constraint ID(s): C3, C4
+
+Covered by Acceptance Criteria ID(s): AC3, AC4
+
+EC4
+
+Description: Busy intervals are overlapping or unsorted, and the system must still avoid suggesting conflicting meeting times.
+
+Linked Constraint ID(s): C3, C6
+
+Covered by Acceptance Criteria ID(s): AC3, AC6
+
+EC5
+
+Description: A candidate meeting fits within working hours but partially falls outside the preferred time window, making it invalid.
+
+Linked Constraint ID(s): C5
+
+Covered by Acceptance Criteria ID(s): AC5
+
+EC6
+
+Description: The working day crosses midnight, such as 10:00 PM to 6:00 AM, which is invalid under the single-day assumption.
+
+Linked Constraint ID(s): C7
+
+Covered by Acceptance Criteria ID(s): AC7
+
+EC7
+
+Description: The working day duration exceeds 24 hours, making the request invalid.
+
+Linked Constraint ID(s): C2
+
+Covered by Acceptance Criteria ID(s): AC2
+
+EC8
+
+Description: Two consecutive valid suggested start times differ by only one minute under the assumed 1-minute granularity.
+
+Linked Constraint ID(s): C1, C6
+
+Covered by Acceptance Criteria ID(s): AC1, AC6
+
+EC9
+
+Description: The system is asked to return more suggestions than actually exist, so it must return only the valid ones available.
+
+Linked Constraint ID(s): C8
+
+Covered by Acceptance Criteria ID(s): AC8
+
+EC10
+
+Description: No valid time slots exist, and the system must return no Suggested Time Slot, an empty Alternative Time Slots list, and a non-empty explanation rather than invalid or conflicting slots.
+
+Linked Constraint ID(s): C12
+
+Covered by Acceptance Criteria ID(s): AC12
+
+EC11
+
+Description: The number of returned valid time slots available is greater than the number of suggestions requested, so the system must truncate the result set and return only the requested number.
+
+Linked Constraint ID(s): C8
+
+Covered by Acceptance Criteria ID(s): AC8
+
+EC12
+
+Description: The number of valid returned valid time slots available is fewer than the number of suggestions requested, so the system must return only the valid suggestions that exist rather than padding or inventing extra slots.
+
+Linked Constraint ID(s): C8
+
+Covered by Acceptance Criteria ID(s): AC8
+
+EC13
+
+Description: provide_explanations = false and no valid slot exists, so the system must still return no slots and a non-empty explanation rather than failing silently.
+
+Linked Constraint ID(s): C12
+
+Covered by Acceptance Criteria ID(s): AC12
+
+EC14
+
+Description: provide_explanations = true and one or more valid slots are returned, so each returned slot must include a rule-based explanation.
+
+Linked Constraint ID(s): C13
+
+Covered by Acceptance Criteria ID(s): AC13, AC17
+
+EC15
+
+Description: One or more valid slots exist, but no single slot is explicitly distinguished as the Suggested Time Slot.
+
+Linked Constraint ID(s): C14
+
+Covered by Acceptance Criteria ID(s): AC14
+
+EC16
+
+Description: One or more valid slots exist and n = 1, so the system returns exactly one Suggested Time Slot and no Alternative Time Slots.
+
+Linked Constraint ID(s): C8, C14
+
+Covered by Acceptance Criteria ID(s): AC8, AC14
+
+EC17
+
+Description: One or more valid slots exist, n > 1, and the returned slots must be split between one Suggested Time Slot and the remaining Alternative Time Slots without exceeding n total.
+
+Linked Constraint ID(s): C8, C14
+
+Covered by Acceptance Criteria ID(s): AC8, AC14
+
+EC18
+
+Description: provide_explanations = true and no valid slot exists, so the system must still return no slots and a non-empty explanation, consistent with the no-valid-slot rule.
+
+Linked Constraint ID(s): C12
+
+Covered by Acceptance Criteria ID(s): AC16
+
+EC19
+
+Description: Per-slot explanations are suppressed when provide_explanations = false and shown when provide_explanations = true, while the returned valid slots themselves remain unchanged.
+
+Linked Constraint ID(s): C13, C15
+
+Covered by Acceptance Criteria ID(s): AC17
+
+EC20
+
+Description: No buffer is provided, and the system must behave the same as if a zero-minute buffer had been explicitly supplied.
+
+Linked Constraint ID(s): C16
+
+Covered by Acceptance Criteria ID(s): AC18
+
+EC21
+
+Description: The meeting duration exceeds the length of all available working intervals, making it impossible to schedule a meeting. The system must return no suggested Time Slot, an empty list of Alternative Time Slots, and a non-empty explanation referencing at least one scheduling rule
+
+Linked Constraint ID(s): C17
+Covered by Acceptance Criteria ID(s): AC19
+
+---
+
+## 7. Traceability - Link functional requirements to constraints and
+acceptance criteria. FR → C → AC mapping
+
+FR1 → C2 → AC2
+FR1 → C7 → AC7
+
+FR2 → C3 → AC3
+
+FR3 → C4 → AC4
+
+FR4 → C4 → AC4
+
+FR5 → C4 → AC4
+
+FR6 → C4 → AC4
+
+FR7 → C3 → AC3
+FR7 → C4 → AC4
+FR7 → C5 → AC5
+FR7 → C11 → AC11
+
+FR8 → C9 → AC9
+
+FR9 → C6 → AC6
+
+FR10 → C10 → AC10
+
+FR11 → C16 → AC18
+
+FR12 → C8 → AC8
+
+FR13 → C15 → AC17
+
+FR14 → C14 → AC14
+FR14 → C6 → AC6
+
+FR15 → C14 → AC14
+FR15 → C6 → AC6
+
+FR16 → C8 → AC8
+FR16 → C14 → AC14
+
+FR17 → C13 → AC13
+
+FR18 → C12 → AC12
+FR18 → C12 → AC16
+
+FR19 → C15 → AC17
+
+FR20 → C17 → AC19
+
+Revision Note 1:
+
+Requirement Updated: 

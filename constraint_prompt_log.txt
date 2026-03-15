@@ -1,0 +1,70 @@
+Prompt 1: 
+
+We are now given two personas, from which we must derive constraints to potentially update the requirements of the system. Here are the personas. Note that these personas were made to be vague and applicable to the scheduling system, as well as a waitlist system that students from another lab are working on. Please disregard material in the personas referencing that waitlist system lab.
+
+PERSONA 1 - Jane Adams (Primary User)
+Context. Busy professional managing daily routines and commitments who relies on
+automation to reduce cognitive load. Jane uses digital tools for medication reminders
+and event registrations and expects them to work reliably without manual oversight.
+Behaviors.
+• Acts quickly and rarely revisits system suggestions.
+• Trusts the system to resolve conflicts and enforce rules automatically.
+• Prefers concise outputs and minimal interaction when making decisions.
+Needs.
+• Predictable and stable ordering of reminders or system decisions.
+• Automatic handling of conflicts (e.g., reminder collisions or waitlist promotion).
+• Limited notification or information overload.
+Pain Points.
+• Receiving too many notifications or duplicate system messages.
+• Systems behave inconsistently in similar situations.
+• Having to manually resolve conflicts or check system correctness.
+PERSONA 2 – Mo Rodriguez (Edge User)
+Context. User with accessibility needs & heightened sensitivity to uncertainty. Mo relies
+on explicit explanations and consistent behavior to build trust in automated systems.
+Behaviors.
+• Carefully reviews outputs and seeks explanations for system decisions.
+• Performs frequent updates (e.g., snoozing reminders or cancelling
+registrations).
+• Experiences stress when outcomes appear arbitrary or unexplained.
+Needs.
+• Deterministic system behavior under ties or conflicting conditions.
+• Clear explanations when reminders are moved, skipped, or when waitlist
+promotions occur.
+• Explicitly handle edge cases instead of silent failure.
+Pain Points.
+• Not understanding why the system changed or rejected an action.
+• Silent failures or dropped reminders/requests.
+• Inconsistent responses across repeated or boundary scenarios.
+
+These are my constraints: The system must not display more scheduling options than the user-requested maximum. Given identical inputs, the system must return the same valid time slots in the same order. The system must not recommend any slot that overlaps a user-unavailable interval. The system must not fail silently when no valid slot exists. The system must not produce duplicate time slots The system must present returned scheduling results using a consistent and non-arbitrary ordering rule. The basis of scheduling outcomes must be accessible to the user. The system must only display slots that satisfy all validity constraints.
+
+Please evaluate the testability of these derived constraints.
+
+Purpose: 
+
+Check if constraints developed were testable.
+
+Response summary: Most constraints were testable, with the exception of "no silent failure", "consistent ordering", and "outcome basis accessible". The former two were partially testable and the latter was not testable. 
+
+
+Prompt 2: 
+Is this more testable? The reasons dictating scheduling outcomes must be accessible, upon the user’s request.
+
+Purpose: 
+
+Check if constraints developed were testable.
+
+Response summary: Still not fully testable. Suggested, "If the user requests explanations, the system shall provide a textual explanation describing why each suggested slot satisfies the scheduling constraints."
+
+Prompt 3: 
+How testable is this?
+When a user requests an explanation for the time slots recommended, the system must return a non-empty explanation that correctly identifies at least one rule that determined the outcome.
+
+Purpose: 
+
+Check if constraints developed were testable.
+
+Response summary: Much more testable.
+
+
+
