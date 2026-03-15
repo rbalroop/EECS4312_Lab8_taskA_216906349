@@ -43,52 +43,51 @@ Output:
 
 See the lab handout for full requirements.
 """
-
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, time
-from typing import List, Optional, Tuple
+from typing import List, Optional
 
 
 # ---------------- Data Models ----------------
 
 @dataclass(frozen=True)
 class TimeWindow:
-    """
-    A daily time window.
-    Assumption (unless stated otherwise in handout): non-wrapping window where start < end.
-    """
     start: time
     end: time
 
 
 @dataclass(frozen=True)
 class BusyInterval:
-    """
-    A busy interval on the given day.
-    Invariant: start < end
-    """
     start: time
     end: time
 
 
 @dataclass(frozen=True)
 class Slot:
-    """
-    A recommended appointment slot.
-
-    start_time is a time-of-day within the working window.
-    Deterministic ordering: sort by start_time ascending.
-    """
     start_time: time
+    end_time: time
+
+
+@dataclass
+class SlotExplanation:
+    slot: Slot
+    explanation: str
+
+
+@dataclass
+class SuggestionResult:
+    suggested: Optional[Slot]
+    alternatives: List[Slot]
+    explanations: Optional[List[SlotExplanation]] = None
+    no_slot_explanation: Optional[str] = None
 
 
 class InfeasibleSchedule(Exception):
-    """Raised when no valid slots can be produced (if required by handout)."""
     pass
 
 
 # ---------------- Core Function ----------------
-    
+
 def suggest_slots(
     day: date,
     working_hours: TimeWindow,
@@ -96,35 +95,18 @@ def suggest_slots(
     duration: timedelta,
     n: int,
     buffer: timedelta = timedelta(0),
-    candidate_window: Optional[TimeWindow] = None
-) -> List[Slot]:
-    """
-    Suggest up to the next n valid appointment slots (start times) for the given day.
-
-    Args:
-        day: the calendar day for which to suggest slots.
-        working_hours: the allowed working window for meetings (start < end).
-        busy_intervals: list of busy time intervals (may be overlapping / unsorted).
-        duration: required meeting length (must be > 0).
-        n: maximum number of slot suggestions to return (n >= 0).
-        buffer: optional buffer time required between meetings (buffer >= 0).
-        candidate_window: optional extra restriction on suggestions (must lie within this window too).
-
-    Returns:
-        A list of Slot objects, sorted by start_time ascending, deterministic under identical inputs.
-        If no suitable time slots are available, return an empty list.
-
-    Notes:
-        - Suggested slots must fall within working_hours (and candidate_window if provided).
-        - Suggested slots must not overlap busy_intervals, considering buffer time.
-        - You are free to choose internal representation; inputs use time-of-day.
-        - See lab handout for required slot granularity (e.g., 5-min/15-min steps), if any.
-    """
+    candidate_window: Optional[TimeWindow] = None,
+    provide_explanations: bool = False
+) -> SuggestionResult:
 
     # ---------------- Input Validation ----------------
 
     if working_hours.start >= working_hours.end:
-        raise InfeasibleSchedule("Working hours must satisfy start < end.")
+        raise InfeasibleSchedule("C7: Working hours must satisfy start < end.")
+
+    working_length = datetime.combine(day, working_hours.end) - datetime.combine(day, working_hours.start)
+    if working_length > timedelta(hours=24):
+        raise InfeasibleSchedule("C2: Working window exceeds 24 hours.")
 
     if duration <= timedelta(0):
         raise InfeasibleSchedule("Meeting duration must be positive.")
@@ -135,66 +117,106 @@ def suggest_slots(
     if buffer < timedelta(0):
         raise InfeasibleSchedule("Buffer must be >= 0.")
 
-    if candidate_window is not None and candidate_window.start >= candidate_window.end:
-        raise InfeasibleSchedule("Candidate window must satisfy start < end.")
+    if candidate_window and candidate_window.start >= candidate_window.end:
+        raise InfeasibleSchedule("Preferred window must satisfy start < end.")
 
     for b in busy_intervals:
         if b.start >= b.end:
-            raise InfeasibleSchedule("Each busy interval must satisfy start < end.")
+            raise InfeasibleSchedule("Busy intervals must satisfy start < end.")
 
     if n == 0:
-        return []
+        return SuggestionResult(None, [])
 
     # ---------------- Effective Search Window ----------------
 
     effective_start = working_hours.start
     effective_end = working_hours.end
 
-    if candidate_window is not None:
+    if candidate_window:
         effective_start = max(effective_start, candidate_window.start)
         effective_end = min(effective_end, candidate_window.end)
 
         if effective_start >= effective_end:
-            return []
+            return SuggestionResult(
+                suggested=None,
+                alternatives=[],
+                no_slot_explanation="C5: Preferred time window eliminates all availability."
+            )
 
-    window_start_dt = datetime.combine(day, effective_start)
-    window_end_dt = datetime.combine(day, effective_end)
+    window_start = datetime.combine(day, effective_start)
+    window_end = datetime.combine(day, effective_end)
 
     # ---------------- Normalize Busy Intervals ----------------
 
     expanded_busy = []
-    for b in busy_intervals:
-        busy_start = datetime.combine(day, b.start) - buffer
-        busy_end = datetime.combine(day, b.end) + buffer
-        expanded_busy.append((busy_start, busy_end))
 
-    expanded_busy.sort(key=lambda interval: (interval[0], interval[1]))
+    for b in busy_intervals:
+        start = datetime.combine(day, b.start) - buffer
+        end = datetime.combine(day, b.end) + buffer
+        expanded_busy.append((start, end))
+
+    expanded_busy.sort(key=lambda x: (x[0], x[1]))
 
     merged_busy = []
-    for start_dt, end_dt in expanded_busy:
-        if not merged_busy or start_dt > merged_busy[-1][1]:
-            merged_busy.append([start_dt, end_dt])
+
+    for start, end in expanded_busy:
+        if not merged_busy or start > merged_busy[-1][1]:
+            merged_busy.append([start, end])
         else:
-            merged_busy[-1][1] = max(merged_busy[-1][1], end_dt)
+            merged_busy[-1][1] = max(merged_busy[-1][1], end)
 
-    # ---------------- Generate Slots ----------------
+    # ---------------- Slot Generation ----------------
 
+    step = timedelta(minutes=1)
     slots: List[Slot] = []
-    step = timedelta(minutes=1)  # Assumed granularity
 
-    current_start = window_start_dt
-    while current_start + duration <= window_end_dt and len(slots) < n:
-        current_end = current_start + duration
+    current = window_start
+
+    while current + duration <= window_end and len(slots) < n:
+        end = current + duration
 
         conflict = False
+
         for busy_start, busy_end in merged_busy:
-            if current_start < busy_end and busy_start < current_end:
+            if current < busy_end and busy_start < end:
                 conflict = True
                 break
 
         if not conflict:
-            slots.append(Slot(start_time=current_start.time()))
+            slots.append(Slot(current.time(), end.time()))
 
-        current_start += step
+        current += step
 
-    return slots
+    # ---------------- Handle No Slot Case ----------------
+
+    if not slots:
+        return SuggestionResult(
+            suggested=None,
+            alternatives=[],
+            no_slot_explanation="C3/C4: No available gap satisfies meeting duration and buffer constraints."
+        )
+
+    # ---------------- Partition Suggested / Alternatives ----------------
+
+    suggested = slots[0]
+    alternatives = slots[1:]
+
+    explanations = None
+
+    if provide_explanations:
+        explanations = []
+
+        for s in slots:
+            explanations.append(
+                SlotExplanation(
+                    slot=s,
+                    explanation="Slot satisfies C3 (no conflict with busy intervals), "
+                                "C4 (buffer respected), and C5 (within preferred window if specified)."
+                )
+            )
+
+    return SuggestionResult(
+        suggested=suggested,
+        alternatives=alternatives,
+        explanations=explanations
+    )
